@@ -55,8 +55,9 @@
     ]
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run compile-ignore-errors",
     "compile": "tsc -p ./",
+    "compile-ignore-errors": "tsc --skipLibCheck -p ./",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",

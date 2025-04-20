@@ -56,61 +56,71 @@ export async function activate(context: vscode.ExtensionContext) {
         {
           location: vscode.ProgressLocation.Notification,
           cancellable: false,
+          title: "Linear"
         },
         async (progress, token) => {
           token.onCancellationRequested(() => {
             console.log("User canceled the long running operation");
           });
 
-          progress.report({ increment: 0, message: "Fetching issues..." });
-          const issues = await getMyIssues();
-          progress.report({ increment: 100 });
-
-          const selectedIssue = await vscode.window.showQuickPick(
-            issues?.map((issue) => ({
-              label: `${issue.identifier} ${issue.title}`,
-              description: issue.identifier,
-              target: issue.id,
-              issue,
-            })) || [],
-            {
-              placeHolder: "Select an issue to save to the working context",
-            }
-          );
-          if (selectedIssue) {
-            setContextIssueId(selectedIssue.target);
-            vscode.window.showInformationMessage(
-              `Linear context issue is set to ${selectedIssue.description}`
+          try {
+            progress.report({ increment: 0, message: "Fetching issues..." });
+            const issues = await getMyIssues();
+            
+            // Update message to indicate fetching is complete
+            progress.report({ increment: 100, message: "Issues fetched successfully" });
+            
+            const selectedIssue = await vscode.window.showQuickPick(
+              issues?.map((issue) => ({
+                label: `${issue.identifier} ${issue.title}`,
+                description: issue.identifier,
+                target: issue.id,
+                issue,
+              })) || [],
+              {
+                placeHolder: "Select an issue to save to the working context",
+              }
             );
-
-            const { issue } = selectedIssue;
-            if (issue) {
-              const action = await vscode.window.showInformationMessage(
-                `Actions for issue ${issue.identifier}`,
-                "Copy ID",
-                "Copy branch name",
-                "Open in browser"
+            if (selectedIssue) {
+              setContextIssueId(selectedIssue.target);
+              vscode.window.showInformationMessage(
+                `Linear context issue is set to ${selectedIssue.description}`
               );
-              if (action) {
-                switch (action) {
-                  case "Copy ID":
-                    await vscode.env.clipboard.writeText(issue.identifier);
-                    vscode.window.showInformationMessage(
-                      `Copied ID ${issue.identifier} to clipboard!`
-                    );
-                    break;
-                  case "Copy branch name":
-                    await vscode.env.clipboard.writeText(issue.branchName);
-                    vscode.window.showInformationMessage(
-                      `Copied branch name ${issue.branchName} to clipboard!`
-                    );
-                    break;
-                  case "Open in browser":
-                    vscode.env.openExternal(vscode.Uri.parse(issue.url));
-                    break;
+
+              const { issue } = selectedIssue;
+              if (issue) {
+                const action = await vscode.window.showInformationMessage(
+                  `Actions for issue ${issue.identifier}`,
+                  "Copy ID",
+                  "Copy branch name",
+                  "Open in browser"
+                );
+                if (action) {
+                  switch (action) {
+                    case "Copy ID":
+                      await vscode.env.clipboard.writeText(issue.identifier);
+                      vscode.window.showInformationMessage(
+                        `Copied ID ${issue.identifier} to clipboard!`
+                      );
+                      break;
+                    case "Copy branch name":
+                      await vscode.env.clipboard.writeText(issue.branchName);
+                      vscode.window.showInformationMessage(
+                        `Copied branch name ${issue.branchName} to clipboard!`
+                      );
+                      break;
+                    case "Open in browser":
+                      vscode.env.openExternal(vscode.Uri.parse(issue.url));
+                      break;
+                  }
                 }
               }
             }
+            return issues; // Return value resolves the Promise to complete the progress
+          } catch (error) {
+            console.error("Error fetching issues:", error);
+            vscode.window.showErrorMessage("Failed to fetch Linear issues");
+            return null; // Ensure Promise completes even on error
           }
         }
       );
@@ -145,38 +155,49 @@ export async function activate(context: vscode.ExtensionContext) {
         {
           location: vscode.ProgressLocation.Notification,
           cancellable: false,
+          title: "Linear"
         },
         async (progress, token) => {
           token.onCancellationRequested(() => {
             console.log("User canceled the long running operation");
           });
 
-          const identifier = (
-            await vscode.window.showInputBox({
-              placeHolder: "Issue identifier",
-            })
-          )?.toString();
+          try {
+            const identifier = (
+              await vscode.window.showInputBox({
+                placeHolder: "Issue identifier",
+              })
+            )?.toString();
 
-          if (!identifier) {
-            return;
-          }
+            if (!identifier) {
+              return null; // Return value to complete the progress
+            }
 
-          progress.report({
-            increment: 0,
-            message: `Fetching issue ${identifier}...`,
-          });
-          const selectedIssue = await getIssueByIdentifier(identifier);
-          progress.report({ increment: 100 });
+            progress.report({
+              increment: 0,
+              message: `Fetching issue ${identifier}...`,
+            });
+            const selectedIssue = await getIssueByIdentifier(identifier);
+            progress.report({ 
+              increment: 100,
+              message: selectedIssue ? "Issue found" : "Issue not found" 
+            });
 
-          if (selectedIssue) {
-            setContextIssueId(selectedIssue.id);
-            vscode.window.showInformationMessage(
-              `Linear context issue is set to ${selectedIssue.identifier}`
-            );
-          } else {
-            vscode.window.showErrorMessage(
-              `Linear issue ${identifier} was not found`
-            );
+            if (selectedIssue) {
+              setContextIssueId(selectedIssue.id);
+              vscode.window.showInformationMessage(
+                `Linear context issue is set to ${selectedIssue.identifier}`
+              );
+            } else {
+              vscode.window.showErrorMessage(
+                `Linear issue ${identifier} was not found`
+              );
+            }
+            return selectedIssue; // Return value resolves the Promise to complete the progress
+          } catch (error) {
+            console.error("Error fetching issue:", error);
+            vscode.window.showErrorMessage("Failed to fetch Linear issue");
+            return null; // Ensure Promise completes even on error
           }
         }
       );
