@@ -26,12 +26,11 @@ Um... [VSCode](https://code.visualstudio.com/) and a [Linear](https://linear.app
 
 ## Getting Started
 
-1. Generate your own API key @ https://linear.app/YOUR_ORG_NAME/settings/api
 1. Search for Linear in your Extensions Tab
 1. Click on the "Install" button
 1. Reload or restart your VSCode
 1. Open the Command Palette (Linux/Windows: `Ctrl+Shift+P`, Mac: `Cmd+Shift+P`).
-1. Run the VSCode command: "Linear: Connect", enter the Linear API key and press enter.
+1. Run the VSCode command: "Linear: Connect", and connect the extension to your desired workspace.
 
 That's it! You can now browse through the different "Linear: ..." commands.
 
