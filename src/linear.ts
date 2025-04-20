@@ -1,4 +1,5 @@
 import { ExtensionContext, SecretStorage, Memento } from "vscode";
+import * as vscode from "vscode";
 import {
   Issue,
   IssuePayload,
@@ -9,33 +10,93 @@ import {
   WorkflowState,
 } from "@linear/sdk";
 
+// Authentication constants for Linear
+const LINEAR_AUTHENTICATION_PROVIDER_ID = "linear";
+const LINEAR_AUTHENTICATION_SCOPES = ["read", "write", "issues:create"];
+
 let _secretStorage: SecretStorage;
 let _storage: Memento;
-let _apiKey: string | undefined;
 let _client: LinearClient | null = null;
 
 export const init = async (context: ExtensionContext): Promise<boolean> => {
   _secretStorage = context.secrets;
   _storage = context.workspaceState;
+  
   try {
-    _apiKey = (await _secretStorage.get("apiKey"))?.toString();
-    _client = new LinearClient({
-      apiKey: _apiKey,
-    });
+    // Try to get authentication session using VS Code's built-in authentication API
+    const session = await vscode.authentication.getSession(
+      LINEAR_AUTHENTICATION_PROVIDER_ID,
+      LINEAR_AUTHENTICATION_SCOPES,
+      { createIfNone: false }
+    );
+
+    if (session) {
+      // Initialize Linear client with the access token from the session
+      _client = new LinearClient({
+        accessToken: session.accessToken,
+      });
+      return true;
+    }
+    
+    // Fall back to checking for API key (for backward compatibility)
+    const apiKey = (await _secretStorage.get("apiKey"))?.toString();
+    if (apiKey) {
+      _client = new LinearClient({
+        apiKey,
+      });
+      return true;
+    }
+    
   } catch (err) {
-    console.error("No API key stored", err);
+    console.error("Error initializing Linear client", err);
   }
-  return !!_apiKey;
+  
+  return false;
 };
 
-export const storeApiKey = async (apiKey: string): Promise<boolean> => {
+// Connect to Linear using VS Code's authentication API
+export const connect = async (): Promise<boolean> => {
   try {
-    await _secretStorage.store("apiKey", apiKey);
+    // Request an authentication session, creating one if none exists
+    const session = await vscode.authentication.getSession(
+      LINEAR_AUTHENTICATION_PROVIDER_ID,
+      LINEAR_AUTHENTICATION_SCOPES,
+      { createIfNone: true }
+    );
+
+    if (!session) {
+      vscode.window.showErrorMessage("Failed to authenticate with Linear");
+      return false;
+    }
+
+    // Initialize Linear client with the access token
+    _client = new LinearClient({
+      accessToken: session.accessToken,
+    });
+    return true;
   } catch (err) {
-    console.error("Error storing API key", err);
+    console.error("Error authenticating with Linear", err);
     return false;
   }
-  return true;
+};
+
+// Sign out from Linear
+export const disconnect = async (): Promise<boolean> => {
+  try {
+    // Clear the stored API key (if any)
+    await _secretStorage.delete("apiKey");
+    
+    // Simply set the client to null - next time the user tries to use Linear features
+    // they'll be prompted to authenticate again
+    _client = null;
+    
+    // We don't need to explicitly clear the session - VS Code manages the sessions
+    // and will prompt for re-authentication when needed
+    return true;
+  } catch (err) {
+    console.error("Error signing out from Linear", err);
+    return false;
+  }
 };
 
 export const getMyIssues = async (): Promise<Issue[] | null> => {

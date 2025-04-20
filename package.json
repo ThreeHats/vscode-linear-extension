@@ -12,12 +12,19 @@
   "categories": [
     "Other"
   ],
+  "extensionDependencies": [
+    "linear.linear-connect"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
         "command": "linear.connect",
         "title": "Linear: Connect"
+      },
+      {
+        "command": "linear.disconnect",
+        "title": "Linear: Disconnect"
       },
       {
         "command": "linear.getMyIssues",
@@ -72,6 +79,6 @@
     "vscode-test": "1.5.2"
   },
   "dependencies": {
-    "@linear/sdk": "1.19.0"
+    "@linear/sdk": "^1.22.0"
   }
 }

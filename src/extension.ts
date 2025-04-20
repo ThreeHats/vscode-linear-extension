@@ -2,7 +2,6 @@ import * as vscode from "vscode";
 
 import {
   init,
-  storeApiKey,
   getMyIssues,
   setContextIssueId,
   addContextIssueComment,
@@ -15,16 +14,18 @@ import {
   getAvailablePriorities,
   getContextIssue,
   getContextIssueWithDetails,
+  connect,
+  disconnect
 } from "./linear";
 
 // This method is called when the extension is activated.
 // The extension is activated the very first time the command is executed.
 export async function activate(context: vscode.ExtensionContext) {
-  const hasApiKey = await init(context);
+  const hasAuth = await init(context);
 
-  if (!hasApiKey) {
+  if (!hasAuth) {
     vscode.window.showInformationMessage(
-      'Please run "Connect to Linear" to initialize the connection'
+      'Please run "Linear: Connect" to initialize the connection'
     );
   }
 
@@ -34,21 +35,40 @@ export async function activate(context: vscode.ExtensionContext) {
   const connectDisposable = vscode.commands.registerCommand(
     "linear.connect",
     async () => {
-      const apiKey = (
-        await vscode.window.showInputBox({ placeHolder: "API key" })
-      )?.toString();
-
-      if (apiKey) {
-        await storeApiKey(apiKey);
-        vscode.window.showInformationMessage(
-          "Your Linear client connection is all set!"
+      try {
+        const success = await connect();
+        
+        if (success) {
+          vscode.window.showInformationMessage(
+            "Successfully connected to Linear!"
+          );
+        } else {
+          vscode.window.showErrorMessage(
+            "Failed to connect to Linear. Please try again."
+          );
+        }
+      } catch (error: any) {
+        vscode.window.showErrorMessage(
+          `Failed to authenticate with Linear: ${error.message}`
         );
-      } else {
-        vscode.window.showErrorMessage("No API key - no cookies!");
       }
     }
   );
   context.subscriptions.push(connectDisposable);
+  
+  const disconnectDisposable = vscode.commands.registerCommand(
+    "linear.disconnect", 
+    async () => {
+      const success = await disconnect();
+      
+      if (success) {
+        vscode.window.showInformationMessage("Disconnected from Linear. Run 'Linear: Connect' to reconnect.");
+      } else {
+        vscode.window.showErrorMessage("Failed to disconnect from Linear. Please try again.");
+      }
+    }
+  );
+  context.subscriptions.push(disconnectDisposable);
 
   const getMyIssuesDisposable = vscode.commands.registerCommand(
     "linear.getMyIssues",
