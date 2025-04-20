@@ -14,6 +14,7 @@ import {
   getTeamMembers,
   getAvailablePriorities,
   getContextIssue,
+  getContextIssueWithDetails,
 } from "./linear";
 
 // This method is called when the extension is activated.
@@ -211,8 +212,11 @@ export async function activate(context: vscode.ExtensionContext) {
       vscode.window.showInformationMessage("Getting available statuses...");
       const statuses = await getWorkflowStates();
 
+      // Resolve all promise objects first
+      const resolvedStatuses = statuses ? await Promise.all(statuses) : [];
+
       const selectedStatus = await vscode.window.showQuickPick(
-        statuses?.map((status) => ({
+        resolvedStatuses.map((status) => ({
           label: status.name,
           target: status.id,
         })) || [],
@@ -270,8 +274,11 @@ export async function activate(context: vscode.ExtensionContext) {
         )?.toString();
 
         const availableStatuses = await getWorkflowStates();
+        // Resolve all promise objects first
+        const resolvedStatuses = availableStatuses ? await Promise.all(availableStatuses) : [];
+        
         const selectedStatus = await vscode.window.showQuickPick(
-          availableStatuses?.map((status) => ({
+          resolvedStatuses.map((status) => ({
             label: status.name,
             target: status.id,
           })) || [],
@@ -399,6 +406,316 @@ export async function activate(context: vscode.ExtensionContext) {
     }
   );
   context.subscriptions.push(showContextIssueActionsDisposable);
+
+  const getContextIssueDetailsDisposable = vscode.commands.registerCommand(
+    "linear.getContextIssueDetails",
+    async () => {
+      vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          cancellable: false,
+          title: "Linear"
+        },
+        async (progress, token) => {
+          token.onCancellationRequested(() => {
+            console.log("User canceled the long running operation");
+          });
+
+          try {
+            progress.report({ increment: 0, message: "Fetching issue details..." });
+            const issueDetails = await getContextIssueWithDetails();
+            
+            progress.report({ increment: 100, message: "Issue details fetched" });
+            
+            if (!issueDetails) {
+              vscode.window.showErrorMessage("No active context issue found.");
+              return null;
+            }
+
+            // Create and show an information panel with the issue details
+            const panel = vscode.window.createWebviewPanel(
+              'linearIssueDetails',
+              `${issueDetails.issue.identifier} - Issue Details`,
+              vscode.ViewColumn.One,
+              {
+                enableScripts: true
+              }
+            );
+            
+            // Format the issue priority as text
+            const priorityLabels = ["None", "Urgent", "High", "Medium", "Low"];
+            const priorityText = issueDetails.issue.priority !== null && issueDetails.issue.priority !== undefined 
+              ? priorityLabels[issueDetails.issue.priority] || "Unknown"
+              : "None";
+            
+            // Resolve state if it's a promise
+            let stateName = "Unknown Status";
+            if (issueDetails.issue.state) {
+              try {
+                const state = await issueDetails.issue.state;
+                stateName = state.name || "Unknown Status";
+              } catch (error) {
+                console.error("Error resolving issue state:", error);
+              }
+            }
+            
+            // Create HTML content for the webview
+            panel.webview.html = `
+              <!DOCTYPE html>
+              <html lang="en">
+              <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Issue Details</title>
+                <style>
+                  body {
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+                    padding: 20px;
+                    color: var(--vscode-foreground);
+                    background-color: var(--vscode-editor-background);
+                  }
+                  .container {
+                    max-width: 800px;
+                    margin: 0 auto;
+                  }
+                  h1 {
+                    margin-bottom: 5px;
+                    font-size: 24px;
+                  }
+                  h2 {
+                    font-size: 16px;
+                    margin-top: 20px;
+                    margin-bottom: 10px;
+                    border-bottom: 1px solid var(--vscode-panel-border);
+                    padding-bottom: 5px;
+                  }
+                  .identifier {
+                    font-weight: bold;
+                    color: var(--vscode-textLink-foreground);
+                    margin-right: 10px;
+                  }
+                  .meta {
+                    margin-bottom: 20px;
+                    color: var(--vscode-descriptionForeground);
+                    font-size: 14px;
+                  }
+                  .label {
+                    font-weight: bold;
+                    margin-right: 5px;
+                  }
+                  .desc {
+                    white-space: pre-wrap;
+                    margin-bottom: 20px;
+                    line-height: 1.5;
+                  }
+                  .status {
+                    display: inline-block;
+                    padding: 3px 8px;
+                    border-radius: 3px;
+                    background-color: var(--vscode-badge-background);
+                    color: var(--vscode-badge-foreground);
+                    margin-right: 10px;
+                  }
+                  .actions {
+                    margin-top: 20px;
+                  }
+                  button {
+                    padding: 8px 12px;
+                    background-color: var(--vscode-button-background);
+                    color: var(--vscode-button-foreground);
+                    border: none;
+                    border-radius: 3px;
+                    cursor: pointer;
+                    margin-right: 10px;
+                  }
+                  button:hover {
+                    background-color: var(--vscode-button-hoverBackground);
+                  }
+                  .info-row {
+                    margin-bottom: 10px;
+                  }
+                  .subscribers {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 10px;
+                    margin-top: 10px;
+                  }
+                  .subscriber {
+                    padding: 3px 8px;
+                    background-color: var(--vscode-badge-background);
+                    color: var(--vscode-badge-foreground);
+                    border-radius: 3px;
+                  }
+                  .comments-list {
+                    margin-top: 20px;
+                  }
+                  .comment {
+                    border: 1px solid var(--vscode-panel-border);
+                    border-radius: 5px;
+                    padding: 10px;
+                    margin-bottom: 10px;
+                    background-color: var(--vscode-editor-inactiveSelectionBackground);
+                  }
+                  .comment-header {
+                    display: flex;
+                    justify-content: space-between;
+                    margin-bottom: 8px;
+                    font-size: 12px;
+                    color: var(--vscode-descriptionForeground);
+                  }
+                  .comment-author {
+                    font-weight: bold;
+                  }
+                  .comment-body {
+                    white-space: pre-wrap;
+                    line-height: 1.5;
+                  }
+                </style>
+              </head>
+              <body>
+                <div class="container">
+                  <h1>
+                    <span class="identifier">${issueDetails.issue.identifier}</span>
+                    ${issueDetails.issue.title}
+                  </h1>
+                  
+                  <div class="meta">
+                    <span class="status">${stateName}</span>
+                    <span class="priority">Priority: ${priorityText}</span>
+                  </div>
+                  
+                  <div class="info-row">
+                    <span class="label">Team:</span> ${issueDetails.team?.name || "Unassigned"}
+                  </div>
+                  
+                  <div class="info-row">
+                    <span class="label">Assignee:</span> ${issueDetails.assignee?.name || "Unassigned"}
+                  </div>
+                  
+                  <div class="info-row">
+                    <span class="label">Created by:</span> ${issueDetails.creator?.name || "Unknown"}
+                  </div>
+
+                  <div class="info-row">
+                    <span class="label">Created:</span> ${new Date(issueDetails.issue.createdAt).toLocaleString()}
+                  </div>
+
+                  ${issueDetails.issue.updatedAt ? 
+                    `<div class="info-row">
+                      <span class="label">Updated:</span> ${new Date(issueDetails.issue.updatedAt).toLocaleString()}
+                    </div>` : ''
+                  }
+                  
+                  ${issueDetails.issue.estimate ? 
+                    `<div class="info-row">
+                      <span class="label">Estimate:</span> ${issueDetails.issue.estimate}
+                    </div>` : ''
+                  }
+                  
+                  <h2>Description</h2>
+                  <div class="desc">${issueDetails.issue.description || "No description provided."}</div>
+                  
+                  ${issueDetails.subscribers && issueDetails.subscribers.length > 0 ? 
+                    `<h2>Subscribers</h2>
+                    <div class="subscribers">
+                      ${issueDetails.subscribers.map(sub => `<div class="subscriber">${sub.name}</div>`).join('')}
+                    </div>` : ''
+                  }
+                  
+                  ${issueDetails.comments && issueDetails.comments.length > 0 ? 
+                    `<h2>Comments</h2>
+                    <div class="comments-list">
+                      ${await Promise.all(issueDetails.comments.map(async comment => {
+                        // Get author name properly
+                        let authorName = 'System';
+                        try {
+                          const user = await comment.user;
+                          if (user) {
+                            authorName = user.name || 'Unknown User';
+                          }
+                        } catch (err) {
+                          console.log('Error getting comment author:', err);
+                        }
+                        
+                        return `
+                          <div class="comment">
+                            <div class="comment-header">
+                              <span class="comment-author">${authorName}</span>
+                              <span class="comment-date">${new Date(comment.createdAt).toLocaleString()}</span>
+                            </div>
+                            <div class="comment-body">${comment.body}</div>
+                          </div>
+                        `;
+                      }))}
+                    </div>` : ''
+                  }
+                  
+                  <div class="actions">
+                    <button id="openInBrowser">Open in Browser</button>
+                    <button id="copyId">Copy ID</button>
+                    <button id="copyBranchName">Copy Branch Name</button>
+                  </div>
+                </div>
+                
+                <script>
+                  const vscode = acquireVsCodeApi();
+                  document.getElementById('openInBrowser').addEventListener('click', () => {
+                    vscode.postMessage({
+                      command: 'openInBrowser',
+                      url: '${issueDetails.issue.url}'
+                    });
+                  });
+                  
+                  document.getElementById('copyId').addEventListener('click', () => {
+                    vscode.postMessage({
+                      command: 'copyId',
+                      id: '${issueDetails.issue.identifier}'
+                    });
+                  });
+                  
+                  document.getElementById('copyBranchName').addEventListener('click', () => {
+                    vscode.postMessage({
+                      command: 'copyBranchName',
+                      branchName: '${issueDetails.issue.branchName}'
+                    });
+                  });
+                </script>
+              </body>
+              </html>
+            `;
+            
+            // Handle messages from the webview
+            panel.webview.onDidReceiveMessage(
+              async message => {
+                switch (message.command) {
+                  case 'openInBrowser':
+                    vscode.env.openExternal(vscode.Uri.parse(message.url));
+                    break;
+                  case 'copyId':
+                    await vscode.env.clipboard.writeText(message.id);
+                    vscode.window.showInformationMessage(`Copied ID ${message.id} to clipboard!`);
+                    break;
+                  case 'copyBranchName':
+                    await vscode.env.clipboard.writeText(message.branchName);
+                    vscode.window.showInformationMessage(`Copied branch name ${message.branchName} to clipboard!`);
+                    break;
+                }
+              },
+              undefined,
+              context.subscriptions
+            );
+            
+            return issueDetails;
+          } catch (error) {
+            console.error("Error fetching issue details:", error);
+            vscode.window.showErrorMessage("Failed to fetch issue details");
+            return null;
+          }
+        }
+      );
+    }
+  );
+  context.subscriptions.push(getContextIssueDetailsDisposable);
 }
 
 // This method is called when your extension is deactivated

@@ -251,3 +251,44 @@ export const getContextIssue = async (): Promise<Issue | undefined> => {
   }
   return;
 };
+
+export const getContextIssueWithDetails = async (): Promise<{issue: Issue, assignee?: User, creator?: User, team?: Team, subscribers?: User[], comments?: any[]} | null> => {
+  if (!_client) {
+    return null;
+  }
+  try {
+    const issueId = (await _storage.get("linearContextIssueId")) as string;
+    if (!issueId) {
+      return null;
+    }
+    
+    const issue = await _client.issue(issueId);
+    if (!issue) {
+      return null;
+    }
+    
+    // Get related data
+    const [assignee, creator, team, subscribersConnection, commentsConnection] = await Promise.all([
+      issue.assignee,
+      issue.creator,
+      issue.team,
+      issue.subscribers(),
+      issue.comments({ first: 100 }) // Get up to 100 comments
+    ]);
+    
+    const subscribers = subscribersConnection?.nodes;
+    const comments = commentsConnection?.nodes;
+    
+    return {
+      issue,
+      assignee,
+      creator,
+      team,
+      subscribers,
+      comments
+    };
+  } catch (err) {
+    console.error("Error retrieving context issue with details", err);
+  }
+  return null;
+};

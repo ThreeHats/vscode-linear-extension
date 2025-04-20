@@ -43,7 +43,7 @@ TBD
 - ✔️ `linear.connect`
 - ✔️ `linear.getMyIssues`
 - ✔️ `linear.setContextIssue`
-- ❌ `linear.getContextIssueDetails`
+- ✔️ `linear.getContextIssueDetails`
 - ✔️ `linear.addContextIssueComment`
 - ✔️ `linear.setContextIssueStatus`
 - ✔️ `linear.createIssue`

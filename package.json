@@ -28,6 +28,10 @@
         "title": "Linear: Set context issue"
       },
       {
+        "command": "linear.getContextIssueDetails",
+        "title": "Linear: Get context issue details"
+      },
+      {
         "command": "linear.addContextIssueComment",
         "title": "Linear: Comment context issue"
       },
