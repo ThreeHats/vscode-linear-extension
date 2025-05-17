@@ -18,6 +18,8 @@ import {
   disconnect
 } from "./linear";
 
+const TITLE = "Linear";
+
 // This method is called when the extension is activated.
 // The extension is activated the very first time the command is executed.
 export async function activate(context: vscode.ExtensionContext) {
@@ -77,7 +79,7 @@ export async function activate(context: vscode.ExtensionContext) {
         {
           location: vscode.ProgressLocation.Notification,
           cancellable: false,
-          title: "Linear"
+          title: TITLE
         },
         async (progress, token) => {
           token.onCancellationRequested(() => {
@@ -89,7 +91,7 @@ export async function activate(context: vscode.ExtensionContext) {
             const issues = await getMyIssues();
             
             // Update message to indicate fetching is complete
-            progress.report({ increment: 100, message: "Issues fetched successfully" });
+            progress.report({ increment: 100, message: `${issues?.length || 0} Issues fetched` });
             
             const selectedIssue = await vscode.window.showQuickPick(
               issues?.map((issue) => ({
@@ -176,7 +178,7 @@ export async function activate(context: vscode.ExtensionContext) {
         {
           location: vscode.ProgressLocation.Notification,
           cancellable: false,
-          title: "Linear"
+          title: TITLE
         },
         async (progress, token) => {
           token.onCancellationRequested(() => {
@@ -201,7 +203,7 @@ export async function activate(context: vscode.ExtensionContext) {
             const selectedIssue = await getIssueByIdentifier(identifier);
             progress.report({ 
               increment: 100,
-              message: selectedIssue ? "Issue found" : "Issue not found" 
+              message: selectedIssue ? "Issue selected" : "Issue not found" 
             });
 
             if (selectedIssue) {
@@ -434,7 +436,7 @@ export async function activate(context: vscode.ExtensionContext) {
         {
           location: vscode.ProgressLocation.Notification,
           cancellable: false,
-          title: "Linear"
+          title: TITLE
         },
         async (progress, token) => {
           token.onCancellationRequested(() => {
@@ -455,7 +457,7 @@ export async function activate(context: vscode.ExtensionContext) {
             // Create and show an information panel with the issue details
             const panel = vscode.window.createWebviewPanel(
               'linearIssueDetails',
-              `${issueDetails.issue.identifier} - Issue Details`,
+              `${issueDetails.issue.identifier} - Issue details`,
               vscode.ViewColumn.One,
               {
                 enableScripts: true
@@ -463,7 +465,16 @@ export async function activate(context: vscode.ExtensionContext) {
             );
             
             // Format the issue priority as text
-            const priorityLabels = ["None", "Urgent", "High", "Medium", "Low"];
+            // Use the getAvailablePriorities function to fetch custom priority labels
+            const availablePriorities = await getAvailablePriorities() || [];
+            
+            // Create a mapping from priority values to their custom labels
+            const priorityLabels: { [key: number]: string } = {};
+            availablePriorities.forEach(priority => {
+              priorityLabels[priority.priority] = priority.label;
+            });
+            
+            // Get priority text from mapped labels or default to "Unknown"/"None"
             const priorityText = issueDetails.issue.priority !== null && issueDetails.issue.priority !== undefined 
               ? priorityLabels[issueDetails.issue.priority] || "Unknown"
               : "None";

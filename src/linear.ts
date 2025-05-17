@@ -1,6 +1,7 @@
 import { ExtensionContext, SecretStorage, Memento } from "vscode";
 import * as vscode from "vscode";
 import {
+  Comment,
   Issue,
   IssuePayload,
   IssuePriorityValue,
@@ -39,7 +40,7 @@ export const init = async (context: ExtensionContext): Promise<boolean> => {
     }
     
     // Fall back to checking for API key (for backward compatibility)
-    const apiKey = (await _secretStorage.get("apiKey"))?.toString();
+    const apiKey = await _secretStorage.get("apiKey");
     if (apiKey) {
       _client = new LinearClient({
         apiKey,
@@ -54,26 +55,69 @@ export const init = async (context: ExtensionContext): Promise<boolean> => {
   return false;
 };
 
-// Connect to Linear using VS Code's authentication API
+// Connect to Linear using VS Code's authentication API or manual API key
 export const connect = async (): Promise<boolean> => {
   try {
-    // Request an authentication session, creating one if none exists
-    const session = await vscode.authentication.getSession(
-      LINEAR_AUTHENTICATION_PROVIDER_ID,
-      LINEAR_AUTHENTICATION_SCOPES,
-      { createIfNone: true }
+    // Ask the user which authentication method they want to use
+    const authMethod = await vscode.window.showQuickPick(
+      [
+        { label: "Sign in with OAuth", description: "Use your Linear account to authenticate" },
+        { label: "Use API Key", description: "Manually provide an API key from Linear" }
+      ],
+      { placeHolder: "Select authentication method" }
     );
 
-    if (!session) {
-      vscode.window.showErrorMessage("Failed to authenticate with Linear");
-      return false;
+    if (!authMethod) {
+      return false; // User cancelled
     }
 
-    // Initialize Linear client with the access token
-    _client = new LinearClient({
-      accessToken: session.accessToken,
-    });
-    return true;
+    if (authMethod.label === "Sign in with OAuth") {
+      // Request an authentication session, creating one if none exists
+      const session = await vscode.authentication.getSession(
+        LINEAR_AUTHENTICATION_PROVIDER_ID,
+        LINEAR_AUTHENTICATION_SCOPES,
+        { createIfNone: true }
+      );
+
+      if (!session) {
+        vscode.window.showErrorMessage("Failed to authenticate with Linear");
+        return false;
+      }
+
+      // Initialize Linear client with the access token
+      _client = new LinearClient({
+        accessToken: session.accessToken,
+      });
+      return true;
+    } else {
+      // Manual API key entry
+      const apiKey = await vscode.window.showInputBox({
+        placeHolder: "Enter your Linear API key",
+        password: true, // Mask the input for security
+        prompt: "You can generate an API key in Linear at Settings > API > OAuth Applications > Developer Token",
+      });
+
+      if (!apiKey) {
+        return false; // User cancelled
+      }
+
+      // Test the API key by initializing a client and making a simple call
+      try {
+        const testClient = new LinearClient({ apiKey });
+        // Try to get the viewer (current user) to validate the key
+        await testClient.viewer;
+        
+        // Store the API key securely
+        await _secretStorage.store("apiKey", apiKey);
+        
+        // Initialize the main client
+        _client = testClient;
+        return true;
+      } catch (error) {
+        vscode.window.showErrorMessage("Invalid API key. Please check and try again.");
+        return false;
+      }
+    }
   } catch (err) {
     console.error("Error authenticating with Linear", err);
     return false;
@@ -83,15 +127,33 @@ export const connect = async (): Promise<boolean> => {
 // Sign out from Linear
 export const disconnect = async (): Promise<boolean> => {
   try {
-    // Clear the stored API key (if any)
+    // Clear any stored API key
     await _secretStorage.delete("apiKey");
     
-    // Simply set the client to null - next time the user tries to use Linear features
+    // Clear OAuth session if it exists
+    try {
+      const session = await vscode.authentication.getSession(
+        LINEAR_AUTHENTICATION_PROVIDER_ID,
+        LINEAR_AUTHENTICATION_SCOPES,
+        { createIfNone: false }
+      );
+      
+      if (session) {
+        // VS Code doesn't have a direct way to sign out a specific session
+        // but we can let the user know they can manage sessions in settings
+        vscode.window.showInformationMessage(
+          "To completely remove OAuth authorization, go to File > Preferences > Settings > Accounts > Linear to manage your sessions."
+        );
+      }
+    } catch (error) {
+      // Ignore errors getting the session - we still want to reset the client
+      console.log("Error checking authentication session:", error);
+    }
+    
+    // Set the client to null - next time the user tries to use Linear features
     // they'll be prompted to authenticate again
     _client = null;
     
-    // We don't need to explicitly clear the session - VS Code manages the sessions
-    // and will prompt for re-authentication when needed
     return true;
   } catch (err) {
     console.error("Error signing out from Linear", err);
@@ -313,12 +375,12 @@ export const getContextIssue = async (): Promise<Issue | undefined> => {
   return;
 };
 
-export const getContextIssueWithDetails = async (): Promise<{issue: Issue, assignee?: User, creator?: User, team?: Team, subscribers?: User[], comments?: any[]} | null> => {
+export const getContextIssueWithDetails = async (): Promise<{issue: Issue, assignee?: User, creator?: User, team?: Team, subscribers?: User[], comments?: Comment[]} | null> => {
   if (!_client) {
     return null;
   }
   try {
-    const issueId = (await _storage.get("linearContextIssueId")) as string;
+    const issueId = _storage.get("linearContextIssueId")?.toString();  
     if (!issueId) {
       return null;
     }
@@ -337,14 +399,15 @@ export const getContextIssueWithDetails = async (): Promise<{issue: Issue, assig
       issue.comments({ first: 100 }) // Get up to 100 comments
     ]);
     
-    const subscribers = subscribersConnection?.nodes;
-    const comments = commentsConnection?.nodes;
+    // Safely handle null values in comments and other entities
+    const subscribers = subscribersConnection?.nodes || [];
+    const comments = commentsConnection?.nodes || [];
     
     return {
       issue,
-      assignee,
-      creator,
-      team,
+      assignee: assignee || undefined,
+      creator: creator || undefined,
+      team: team || undefined,
       subscribers,
       comments
     };
